@@ -1,0 +1,65 @@
+## @file
+#  Component description file for the RapidStart SMM module.
+#
+#@copyright
+#  Copyright (c)  2004 - 2013 Intel Corporation. All rights reserved
+#  This software and associated documentation (if any) is furnished
+#  under a license and may only be used or copied in accordance
+#  with the terms of the license. Except as permitted by such
+#  license, no part of this software or documentation may be
+#  reproduced, stored in a retrieval system, or transmitted in any
+#  form or by any means without the express written consent of
+#  Intel Corporation.
+#  This file contains a 'Sample Driver' and is licensed as such
+#  under the terms of your license agreement with Intel or your
+#  vendor.  This file may be modified by the user, subject to
+#  the additional terms of the license agreement
+#
+################################################################################
+[Defines]
+INF_VERSION              = 0x00010005
+BASE_NAME                = MmMpTestSmm
+FILE_GUID                = 43172851-CF7E-4345-9FE0-D7012BB17B88
+MODULE_TYPE              = DXE_SMM_DRIVER
+VERSION_STRING           = 1.0
+PI_SPECIFICATION_VERSION = 0x0001000A
+ENTRY_POINT              = MmMpTestSmmEntryPoint
+
+[Sources]
+  MmMpTestSmm.c
+  MmMpTest.h
+
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  UefiCpuPkg/UefiCpuPkg.dec
+  
+[LibraryClasses]
+  BaseLib
+  IoLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DebugLib
+  PciLib
+  UefiLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  DevicePathLib
+  PchPlatformLib
+  MmPciBaseLib
+  SynchronizationLib
+  TimerLib
+
+[Pcd]
+  
+[Protocols]
+  gEfiSmmBase2ProtocolGuid                      ## CONSUMES
+  gEfiSmmSwDispatch2ProtocolGuid                ## CONSUMES
+  gEfiSmmMpProtocolGuid
+  gEfiSmmCpuServiceProtocolGuid
+[BuildOptions]
+  MSFT:*_*_*_CC_FLAGS     = /Od /GL-
+[Depex]
+  gEfiSmmBase2ProtocolGuid AND
+  gEfiSmmSwDispatch2ProtocolGuid
