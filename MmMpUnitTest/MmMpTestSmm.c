@@ -26,7 +26,7 @@
 #include <PiDxe.h>
 #include <Protocol/SmmControl2.h>
 #include <Protocol/SmmSwDispatch2.h>
-#include <Protocol/SmmMp.h>
+#include <Protocol/MmMp.h>
 #include <Protocol/SmmCpuService.h>
 
 #include <Library/BaseLib.h>
@@ -205,14 +205,14 @@ DebugMsg (
   AcquireSpinLock (&mConsoleLock);
 
   VA_START (Marker, Format);
-  DebugPrint (ErrorLevel, Format, Marker);
+  DebugVPrint (ErrorLevel, Format, Marker);
   VA_END (Marker);
 
   ReleaseSpinLock (&mConsoleLock);
 }
 
 EFI_STATUS
-ApSyncProcedure (
+SingleApSyncProcedure (
   IN VOID  *ProcedureArgument
   )
 {
@@ -220,13 +220,27 @@ ApSyncProcedure (
   
   Argument = (PROCEDURE_ARGUMENTS *)ProcedureArgument;
 
-  DebugMsg (DEBUG_INFO, "Ap Sync Procedure function done, MagicNum = 0x%x, Processor Index = 0x%x!\n", Argument->MagicNumber, Argument->ProcessorIndex);
+  DebugMsg (DEBUG_INFO, "    Ap Sync Procedure function done, MagicNum = 0x%x, Processor Index = 0x%x!\n", Argument->MagicNumber, Argument->ProcessorIndex);
 
-  return *(UINTN *) ProcedureArgument;
+  return Argument->MagicNumber;
 }
 
 EFI_STATUS
-ApAsyncProcedure (
+MultipleApSyncProcedure (
+  IN VOID  *ProcedureArgument
+  )
+{
+  PROCEDURE_ARGUMENTS            *Argument;
+  
+  Argument = (PROCEDURE_ARGUMENTS *)ProcedureArgument;
+
+  DebugMsg (DEBUG_INFO, "    Ap Sync Procedure function done, MagicNum = 0x%x!\n", Argument->MagicNumber);
+
+  return Argument->MagicNumber;
+}
+
+EFI_STATUS
+SingleApAsyncProcedure (
   IN VOID  *ProcedureArgument
   )
 {
@@ -236,36 +250,78 @@ ApAsyncProcedure (
 
   Sleep (Argument->SleepTime);
   
-  DebugMsg (DEBUG_INFO, "Ap Async Procedure function done, MagicNum = 0x%x, Processor Index = 0x%x!\n", Argument->MagicNumber, Argument->ProcessorIndex);
+  DebugMsg (DEBUG_INFO, "    Ap Async Procedure function done, MagicNum = 0x%x, Processor Index = 0x%x!\n", Argument->MagicNumber, Argument->ProcessorIndex);
 
-  return *(UINTN *) ProcedureArgument;
+  return Argument->MagicNumber;
 }
 
+EFI_STATUS
+MultipleApAsyncProcedure (
+  IN VOID  *ProcedureArgument
+  )
+{
+  PROCEDURE_ARGUMENTS            *Argument;
+  
+  Argument = (PROCEDURE_ARGUMENTS *)ProcedureArgument;
+
+  Sleep (Argument->SleepTime);
+  
+  DebugMsg (DEBUG_INFO, "    Ap Async Procedure function done, MagicNum = 0x%x!\n", Argument->MagicNumber);
+
+  return Argument->MagicNumber;
+}
 
 EFI_STATUS
 SmmMpDispatchProcedureSyncModeVerification (
-  IN EFI_SMM_MP_PROTOCOL               *SmmMp,
+  IN EFI_MM_MP_PROTOCOL                *SmmMp,
   IN UINT32                             CpuNumber
   )
 {
   EFI_STATUS                     Status;
   PROCEDURE_ARGUMENTS            Argument;
+  EFI_STATUS                     ProcedureStatus;
 
   //
   // 1. Check block style. 
   // 
   Argument.MagicNumber    = 0x10;
   Argument.ProcessorIndex = CpuNumber;
-  DEBUG ((DEBUG_INFO, "1.1 Block style SmmMp DispatchProcedure test begin.\n"));
-  DEBUG ((DEBUG_INFO, "1.1 Input Argument.MagicNumber = 0x%x!\n", Argument.MagicNumber));
-  DEBUG ((DEBUG_INFO, "1.1 Input Argument.ProcessorIndex = 0x%x!\n", Argument.ProcessorIndex));
+  DEBUG ((DEBUG_INFO, "1.0 Block mode DispatchProcedure with CpuStatus == NULL\n"));
+  DEBUG ((DEBUG_INFO, "1.0 Input Argument.MagicNumber = 0x%x.\n", Argument.MagicNumber));
+  DEBUG ((DEBUG_INFO, "1.0 Input Argument.ProcessorIndex = 0x%x.\n", Argument.ProcessorIndex));
 
-  Status = SmmMp->DispatchProcedure (SmmMp, ApSyncProcedure, CpuNumber, 0, &Argument, NULL, NULL);
+  Status = SmmMp->DispatchProcedure (SmmMp, SingleApSyncProcedure, CpuNumber, 0, &Argument, NULL, NULL);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "1.1 Block style SmmMp DispatchProcedure function return failed, status = %r!\n", Status));
+    DEBUG ((DEBUG_ERROR, "1.1 DispatchProcedure return status = %r.\n", Status));
+    goto ErrorExit;
   } else {
-    DEBUG ((DEBUG_ERROR, "1.1 Block style SmmMp DispatchProcedure function return pass!\n"));
+    DEBUG ((DEBUG_ERROR, "1.1 DispatchProcedure return EFI_SUCCESS.\n"));
   }
+  DEBUG ((DEBUG_ERROR, "\n"));
+
+  DEBUG ((DEBUG_ERROR, "1.2 Block mode DispatchProcedure with CpuStatus != NULL.\n"));
+  DEBUG ((DEBUG_INFO, "1.0 Input Argument.MagicNumber = 0x%x.\n", Argument.MagicNumber));
+  DEBUG ((DEBUG_INFO, "1.0 Input Argument.ProcessorIndex = 0x%x.\n", Argument.ProcessorIndex));
+
+  Status = SmmMp->DispatchProcedure (SmmMp, SingleApSyncProcedure, CpuNumber, 0, &Argument, NULL, &ProcedureStatus);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "1.2 DispatchProcedure return status = %r.\n", Status));
+    goto ErrorExit;
+  } else {
+    DEBUG ((DEBUG_ERROR, "1.2 DispatchProcedure return EFI_SUCCESS.\n"));
+  }
+
+  //
+  // Test Procedure return status.
+  //
+  DEBUG ((DEBUG_ERROR, "1.3 DispatchProcedure check Procedure return Status!\n"));
+  if (ProcedureStatus != Argument.MagicNumber) {
+    DEBUG ((DEBUG_ERROR, "1.3 DispatchProcedure check Procedure return status fail.\n"));
+  } else {
+    DEBUG ((DEBUG_ERROR, "1.3 DispatchProcedure check Procedure return status pass.\n"));
+  }
+
+ErrorExit:
   DEBUG ((DEBUG_ERROR, "\n"));
 
   return Status;
@@ -274,15 +330,25 @@ SmmMpDispatchProcedureSyncModeVerification (
 
 EFI_STATUS
 SmmMpDispatchProcedureAsyncModeVerification (
-  IN EFI_SMM_MP_PROTOCOL               *SmmMp,
+  IN EFI_MM_MP_PROTOCOL                *SmmMp,
   IN UINT32                             CpuNumber,
-  IN UINT32                            SleepNum
+  IN UINT32                            SleepNum,
+  IN BOOLEAN                           WithStatus
   )
 {
-  SMM_COMPLETION                 Token;
+  MM_COMPLETION                  Token;
   EFI_STATUS                     Status;
   EFI_STATUS                     ProcedureStatus;
   PROCEDURE_ARGUMENTS            Argument;
+  EFI_STATUS                     *ProcStatus;
+
+  if (WithStatus) {
+    DEBUG ((DEBUG_ERROR, "2.0 Non-Block mode DispatchProcedure with CpuStatus != NULL\n"));
+    ProcStatus = &ProcedureStatus;
+  } else {
+    DEBUG ((DEBUG_ERROR, "2.0 Non-Block mode DispatchProcedure with CpuStatus == NULL\n"));
+    ProcStatus = NULL;
+  }
 
   //
   // 1. Check non-block style. 
@@ -290,16 +356,17 @@ SmmMpDispatchProcedureAsyncModeVerification (
   Argument.MagicNumber = 0x20;
   Argument.SleepTime = SleepNum;
   Argument.ProcessorIndex = (UINT32) CpuNumber;
-  DEBUG ((DEBUG_INFO, "1.2 Non-block style SmmMp DispatchProcedure test begin.\n"));
-  DEBUG ((DEBUG_INFO, "1.2 Input Argument.MagicNumber = 0x%x!\n", Argument.MagicNumber));
-  DEBUG ((DEBUG_INFO, "1.2 Input Argument.ProcessorIndex = 0x%x!\n", Argument.ProcessorIndex));
-  DEBUG ((DEBUG_INFO, "1.2 Input Argument.SleepTime = 0x%x!\n", Argument.SleepTime));
-  Status = SmmMp->DispatchProcedure (SmmMp, ApAsyncProcedure, CpuNumber, 0, &Argument, &Token, &ProcedureStatus);
+
+  DEBUG ((DEBUG_INFO, "2.0 Input Argument.MagicNumber = 0x%x!\n", Argument.MagicNumber));
+  DEBUG ((DEBUG_INFO, "2.0 Input Argument.ProcessorIndex = 0x%x!\n", Argument.ProcessorIndex));
+  DEBUG ((DEBUG_INFO, "2.0 Input Argument.SleepTime = 0x%x!\n", Argument.SleepTime));
+
+  Status = SmmMp->DispatchProcedure (SmmMp, SingleApAsyncProcedure, CpuNumber, 0, &Argument, &Token, ProcStatus);
   if (EFI_ERROR (Status)) {
-    DebugMsg (DEBUG_ERROR, "1.2 Non-block style SmmMp DispatchProcedure function return failed, %r!\n", Status);
+    DebugMsg (DEBUG_ERROR, "2.1 DispatchProcedure return status = %r\n", Status);
     goto Exit;
   } else {
-    DebugMsg (DEBUG_ERROR, "1.2 Non-block style SmmMp DispatchProcedure function return pass!\n");
+    DebugMsg (DEBUG_ERROR, "2.1 DispatchProcedure function return EFI_SUCCESS!\n");
   }
   DebugMsg (DEBUG_ERROR, "\n");
 
@@ -307,17 +374,17 @@ SmmMpDispatchProcedureAsyncModeVerification (
   // 2. check CheckForProcedure.
   //
   // DEBUG ((DEBUG_ERROR, "Token address = 0x%x!\n", &Token));
-  DebugMsg (DEBUG_INFO, "1.3 Check For Procedure test begin.\n");
+  DebugMsg (DEBUG_INFO, "2.2 Check For Procedure test begin.\n");
   Status = SmmMp->CheckForProcedure (SmmMp, Token);
   if (EFI_ERROR (Status)) {
     if (Status != EFI_NOT_READY) {
-      DebugMsg (DEBUG_ERROR, "1.3 CheckForProcedure return error, status = %r!\n", Status);
+      DebugMsg (DEBUG_ERROR, "2.2 CheckForProcedure return status = %r!\n", Status);
       goto Exit;
     } else {
-      DebugMsg (DEBUG_ERROR, "1.3 CheckForProcedure not get the final result! status = EFI_NOT_READY!\n");
+      DebugMsg (DEBUG_ERROR, "2.2 CheckForProcedure return EFI_NOT_READY!\n");
     }
   } else {
-    DebugMsg (DEBUG_ERROR, "1.3 CheckForProcedure get the final result! return EFI_SUCCESS!\n");
+    DebugMsg (DEBUG_ERROR, "2.2 CheckForProcedure return EFI_SUCCESS!\n");
     goto Exit;
   }
   DebugMsg (DEBUG_ERROR, "\n");
@@ -325,15 +392,23 @@ SmmMpDispatchProcedureAsyncModeVerification (
   //
   // 3. check WaitForProcedure.
   //
+  DebugMsg (DEBUG_INFO, "2.3 Wait For Procedure test begin.\n");
   Status = SmmMp->WaitForProcedure (SmmMp, Token);
   if (EFI_ERROR (Status)) {
-    DebugMsg (DEBUG_ERROR, "1.4 SmmMpWaitForProcedure return error, status = %r!\n", Status);
+    DebugMsg (DEBUG_ERROR, "2.3 SmmMpWaitForProcedure return status = %r!\n", Status);
   } else {
-    DebugMsg (DEBUG_ERROR, "1.4 SmmMpWaitForProcedure get final result! return EFI_SUCCESS!\n");
-    DebugMsg (DEBUG_ERROR, "1.4 ApAsyncProcedure expect return EFI_SUCCESS (0x0), truly return Status = %r!\n", ProcedureStatus);
+    DebugMsg (DEBUG_ERROR, "2.3 SmmMpWaitForProcedure return EFI_SUCCESS!\n");
   }
 
 Exit:
+  if (EFI_SUCCESS == Status && ProcStatus != NULL) {
+    DebugMsg (DEBUG_INFO, "2.4 Check the procedure return status.\n");
+    if (*ProcStatus == Argument.MagicNumber) {
+      DebugMsg (DEBUG_INFO, "2.4 Check the procedure return status Pass.\n");
+    } else {
+      DebugMsg (DEBUG_INFO, "2.4 Check the procedure return status Fail.\n");
+    }
+  }
   DebugMsg (DEBUG_ERROR, "\n");
 
   return Status;
@@ -341,7 +416,7 @@ Exit:
 
 VOID
 SmmMpDispatchProcedureVerification (
-  IN EFI_SMM_MP_PROTOCOL               *SmmMp,
+  IN EFI_MM_MP_PROTOCOL                 *SmmMp,
   IN UINT32                             CpuNumber
   )
 {
@@ -354,46 +429,91 @@ SmmMpDispatchProcedureVerification (
   // 2. Check non-block style with 0x80 sleep time. 
   // Expect WaitForProcedure should not work at this test.
   //
-  SmmMpDispatchProcedureAsyncModeVerification (SmmMp, CpuNumber, 0x80);
+  SmmMpDispatchProcedureAsyncModeVerification (SmmMp, CpuNumber, 0x80, FALSE);
 
   //
-  // 3. Check non-block style with 0x400 sleep time.
+  // 3. Check non-block style with 0x80 sleep time. 
+  // Expect WaitForProcedure should not work at this test.
+  //
+  SmmMpDispatchProcedureAsyncModeVerification (SmmMp, CpuNumber, 0x80, TRUE);
+
+  //
+  // 4. Check non-block style with 0x400 sleep time.
   // Expect WaitForProcedure should work at this test.
   //
-  SmmMpDispatchProcedureAsyncModeVerification (SmmMp, CpuNumber, 0x400);
+  SmmMpDispatchProcedureAsyncModeVerification (SmmMp, CpuNumber, 0x800, FALSE);
+
+  //
+  // 5. Check non-block style with 0x400 sleep time.
+  // Expect WaitForProcedure should work at this test.
+  //
+  SmmMpDispatchProcedureAsyncModeVerification (SmmMp, CpuNumber, 0x800, TRUE);
 }
 
 EFI_STATUS
 SmmMpBroadcastProcedureSyncModeVerification (
-  IN EFI_SMM_MP_PROTOCOL               *SmmMp,
-  IN UINT32                             ProcessorNum
+  IN EFI_MM_MP_PROTOCOL                 *SmmMp,
+  IN UINT32                             ProcessorNum,
+  IN BOOLEAN                            WithStatus
   )
 {
   EFI_STATUS                     Status;
   EFI_STATUS                     *StatusArray;
   PROCEDURE_ARGUMENTS            Argument;
+  UINTN                          Index;
+  BOOLEAN                        FoundError;
+
+  if (WithStatus) {
+    DEBUG ((DEBUG_INFO, "3.0 Block Mode BroadcastProcedure test with CPUStatus != NULL\n"));
+    StatusArray = AllocateZeroPool (sizeof(EFI_STATUS) * ProcessorNum);
+    ASSERT (StatusArray != NULL);
+    ZeroMem (StatusArray, sizeof(EFI_STATUS) * ProcessorNum);
+  } else {
+    DEBUG ((DEBUG_INFO, "3.0 Block Mode BroadcastProcedure test with CPUStatus == NULL\n"));
+    StatusArray = NULL;
+  }
 
   //
   // 1. Check block style. 
   // 
   Argument.MagicNumber    = 0x10;
   Argument.ProcessorIndex = (UINT32) ProcessorNum;
-
-  StatusArray = AllocateZeroPool (sizeof(EFI_STATUS) * ProcessorNum);
-  ASSERT (StatusArray != NULL);
-  ZeroMem (StatusArray, sizeof(EFI_STATUS) * ProcessorNum);
+  DEBUG ((DEBUG_INFO, "3.0 Input Argument.MagicNumber = 0x%x!\n", Argument.MagicNumber));
+  DEBUG ((DEBUG_INFO, "3.0 Input Argument.ProcessorIndex = 0x%x!\n", Argument.ProcessorIndex));
 
   //
   // 1. Check block style. 
   //
-  DEBUG ((DEBUG_INFO, "2.1 Block style SmmMp Broadcast Procedure test begin.\n"));
-  DEBUG ((DEBUG_INFO, "2.1 Input MagicNumber = 0x%x!\n", Argument.MagicNumber));
-  Status = SmmMp->BroadcastProcedure (SmmMp, ApSyncProcedure, 0, &Argument, NULL, StatusArray);
+  Status = SmmMp->BroadcastProcedure (SmmMp, MultipleApSyncProcedure, 0, &Argument, NULL, StatusArray);
   if (EFI_ERROR (Status)) {
-    DEBUG ((DEBUG_ERROR, "2.1 Block style SmmMp BroadcastProcedure function return failed!\n"));
+    DEBUG ((DEBUG_ERROR, "3.1 BroadcastProcedure function return %r!\n", Status));
+    goto ErrorExit;
   } else {
-    DEBUG ((DEBUG_ERROR, "2.1 Block style SmmMp BroadcastProcedure function return pass!\n"));
+    DEBUG ((DEBUG_ERROR, "3.1 BroadcastProcedure function return EFI_SUCCESS!\n"));
   }
+
+  if (WithStatus) {
+    //
+    // 2. Check procedure return status.
+    //
+    FoundError = FALSE;
+    //
+    // Skip BSP, Index begin from 1.
+    //
+    DEBUG ((DEBUG_ERROR, "3.2 BroadcastProcedure check Procedure return Status!\n"));
+    for (Index = 1; Index < ProcessorNum; Index ++) {
+      if (StatusArray[Index] != Argument.MagicNumber) {
+        DEBUG ((DEBUG_ERROR, "3.2 BroadcastProcedure check procedure return status failed, Ap = 0x%x!\n", Index));
+        FoundError = TRUE;
+      }
+    }
+    
+    if (!FoundError) {
+      DEBUG ((DEBUG_ERROR, "3.2 BroadcastProcedure function check procedure return status pass!\n"));
+    }
+  }
+
+ErrorExit:
   DEBUG ((DEBUG_ERROR, "\n"));
 
   return Status;
@@ -402,64 +522,91 @@ SmmMpBroadcastProcedureSyncModeVerification (
 
 EFI_STATUS
 SmmMpBroadcastProcedureAsyncModeVerification (
-  IN EFI_SMM_MP_PROTOCOL               *SmmMp,
+  IN EFI_MM_MP_PROTOCOL                 *SmmMp,
   IN UINT32                             ProcessorNum,
-  IN UINT32                             SleepNum
+  IN UINT32                             SleepNum,
+  IN BOOLEAN                            WithStatus
   )
 {
-  SMM_COMPLETION                 Token;
+  MM_COMPLETION                  Token;
   EFI_STATUS                     Status;
   EFI_STATUS                     *StatusArray;
   PROCEDURE_ARGUMENTS            Argument;
+  BOOLEAN                        FoundError;
+  UINTN                          Index;
+
+  if (WithStatus) {
+    DEBUG ((DEBUG_INFO, "4.0 Non-Block mode BroadcastProcedure test with CPUStatus != NULL\n"));
+    StatusArray = AllocateZeroPool (sizeof(EFI_STATUS) * ProcessorNum);
+    ASSERT (StatusArray != NULL);
+    ZeroMem (StatusArray, sizeof(EFI_STATUS) * ProcessorNum);
+  } else {
+    DEBUG ((DEBUG_INFO, "4.0 Non-Block mode BroadcastProcedure test with CPUStatus == NULL\n"));
+    StatusArray = NULL;
+  }
 
   //
   // 1. Check Non-block style. 
-  // 
-  StatusArray = AllocateZeroPool (sizeof(EFI_STATUS) * ProcessorNum);
-  ASSERT (StatusArray != NULL);
-
-  ZeroMem (StatusArray, sizeof(EFI_STATUS) * ProcessorNum);
-
+  //
   Argument.ProcessorIndex = (UINT32) ProcessorNum;
-  Argument.MagicNumber    = EFI_SUCCESS;
-  Argument.SleepTime      = 0x80;
-  DEBUG ((DEBUG_INFO, "2.2 Non-block style SmmMp Broadcast Procedure test begin.\n"));
-  DEBUG ((DEBUG_INFO, "2.2 Input MagicNumber = 0x%x!\n", Argument.MagicNumber));
-  DEBUG ((DEBUG_INFO, "2.2 Input Sleep Time = 0x%x!\n", Argument.SleepTime));
-  Status = SmmMp->BroadcastProcedure (SmmMp, ApAsyncProcedure, 0, &Argument, &Token, StatusArray);
+  Argument.MagicNumber    = 0x20;
+  Argument.SleepTime      = SleepNum;
+  DEBUG ((DEBUG_INFO, "4.0 Input Argument.MagicNumber = 0x%x!\n", Argument.MagicNumber));
+  DEBUG ((DEBUG_INFO, "4.0 Input Argument.ProcessorIndex = 0x%x!\n", Argument.ProcessorIndex));
+  DEBUG ((DEBUG_INFO, "4.0 Input Argument.SleepTime = 0x%x!\n", Argument.SleepTime));
+
+  Status = SmmMp->BroadcastProcedure (SmmMp, MultipleApAsyncProcedure, 0, &Argument, &Token, StatusArray);
   if (EFI_ERROR (Status)) {
-    DebugMsg (DEBUG_ERROR, "2.2 Non-block style SmmMp Broadcast Procedure function return failed!\n");
+    DebugMsg (DEBUG_ERROR, "4.1 BroadcastProcedure function return %r!\n", Status);
     goto Exit;
   } else {
-    DebugMsg (DEBUG_ERROR, "2.2 Non-block style SmmMp Broadcast Procedure function return pass!\n");
+    DebugMsg (DEBUG_ERROR, "4.1 BroadcastProcedure function return EFI_SUCCESS!\n");
   }
   DebugMsg (DEBUG_ERROR, "\n");
 
-  DebugMsg (DEBUG_INFO, "2.3 Check For Procedure test begin.\n");
+  DebugMsg (DEBUG_INFO, "4.2 Check For Procedure test begin.\n");
   Status = SmmMp->CheckForProcedure (SmmMp, Token);
   if (EFI_ERROR (Status)) {
     if (Status != EFI_NOT_READY) {
-      DebugMsg (DEBUG_ERROR, "2.3 CheckForProcedure return error, status = %r!\n", Status);
+      DebugMsg (DEBUG_ERROR, "4.2 CheckForProcedure return status = %r!\n", Status);
       goto Exit;
     } else {
-      DebugMsg (DEBUG_ERROR, "2.3 CheckForProcedure not get the final result! status = EFI_NOT_READY!\n");
+      DebugMsg (DEBUG_ERROR, "4.2 CheckForProcedure not get the final result! status = EFI_NOT_READY!\n");
     }
   } else {
-    DebugMsg (DEBUG_ERROR, "2.3 CheckForProcedure get the final result! return EFI_SUCCESS!\n");
-    Status = EFI_SUCCESS;
+    DebugMsg (DEBUG_ERROR, "4.2 CheckForProcedure get the final result! return EFI_SUCCESS!\n");
     goto Exit;
   }
   DebugMsg (DEBUG_ERROR, "\n");
 
-  DebugMsg (DEBUG_INFO, "2.3 Wait For Procedure test begin.\n");
+  DebugMsg (DEBUG_INFO, "4.3 Wait For Procedure test begin.\n");
   Status = SmmMp->WaitForProcedure (SmmMp, Token);
   if (EFI_ERROR (Status)) {
-    DebugMsg (DEBUG_ERROR, "2.3 SmmMp Wait For Procedure return error, status = %r!\n", Status);
+    DebugMsg (DEBUG_ERROR, "4.3 WaitForProcedure return status = %r!\n", Status);
   } else {
-    DebugMsg (DEBUG_ERROR, "2.3 SmmMp Wait For Procedure get final result! return EFI_SUCCESS!\n");
+    DebugMsg (DEBUG_ERROR, "4.3 WaitForProcedure get final result! return EFI_SUCCESS!\n");
   }
 
 Exit:
+
+  if (EFI_SUCCESS == Status && StatusArray != NULL) {
+    FoundError = FALSE;
+    //
+    // Skip BSP, Index begin from 1.
+    //
+    DEBUG ((DEBUG_ERROR, "4.4 BroadcastProcedure check Procedure return Status!\n"));
+    for (Index = 1; Index < ProcessorNum; Index ++) {
+      if (StatusArray[Index] != Argument.MagicNumber) {
+        DEBUG ((DEBUG_ERROR, "4.4 BroadcastProcedure check procedure return status failed, Ap = 0x%x!\n", Index));
+        FoundError = TRUE;
+      }
+    }
+
+    if (!FoundError) {
+      DEBUG ((DEBUG_ERROR, "4.4 BroadcastProcedure check procedure return status pass!\n"));
+    }
+  }
+
   DEBUG ((DEBUG_ERROR, "\n"));
 
   return Status;
@@ -468,26 +615,43 @@ Exit:
 
 VOID
 SmmMpBroadcastProcedureVerification (
-  IN EFI_SMM_MP_PROTOCOL               *SmmMp,
+  IN EFI_MM_MP_PROTOCOL                 *SmmMp,
   IN UINT32                             ProcessorNum
   )
 {
   //
   // 1. Check block style. 
   //
-  SmmMpBroadcastProcedureSyncModeVerification (SmmMp, ProcessorNum);
+  SmmMpBroadcastProcedureSyncModeVerification (SmmMp, ProcessorNum, FALSE);
+
+  //
+  // 1. Check block style. 
+  //
+  SmmMpBroadcastProcedureSyncModeVerification (SmmMp, ProcessorNum, TRUE);
 
   //
   // 2. Check Non-block style.
   // Expect WaitForProcedure should not work at this test.
   // 
-  SmmMpBroadcastProcedureAsyncModeVerification (SmmMp, ProcessorNum, 0x80);
+  SmmMpBroadcastProcedureAsyncModeVerification (SmmMp, ProcessorNum, 0x80, FALSE);
+
+  //
+  // 2. Check Non-block style.
+  // Expect WaitForProcedure should not work at this test.
+  // 
+  SmmMpBroadcastProcedureAsyncModeVerification (SmmMp, ProcessorNum, 0x80, TRUE);
 
   //
   // 3. Check Non-block style.
   // Expect WaitForProcedure should work at this test.
   // 
-  SmmMpBroadcastProcedureAsyncModeVerification (SmmMp, ProcessorNum, 0x400);
+  SmmMpBroadcastProcedureAsyncModeVerification (SmmMp, ProcessorNum, 0x400, FALSE);
+
+  //
+  // 3. Check Non-block style.
+  // Expect WaitForProcedure should work at this test.
+  // 
+  SmmMpBroadcastProcedureAsyncModeVerification (SmmMp, ProcessorNum, 0x400, TRUE);
 }
 
 
@@ -498,12 +662,12 @@ SmmMpVerification (
 {
   EFI_STATUS                        Status;
   UINTN                             ProcessorsNum;
-  EFI_SMM_MP_PROTOCOL               *SmmMp;
+  EFI_MM_MP_PROTOCOL                *SmmMp;
   EFI_SMM_CPU_SERVICE_PROTOCOL      *SmmCpu;
   UINTN                             BspIndex;
   UINTN                             SelectedApIndex;
 
-  Status = gSmst->SmmLocateProtocol (&gEfiSmmMpProtocolGuid, NULL, (VOID **) &SmmMp);
+  Status = gSmst->SmmLocateProtocol (&gEfiMmMpProtocolGuid, NULL, (VOID **) &SmmMp);
   if (EFI_ERROR (Status)) {
     DEBUG ((DEBUG_ERROR, "gEfiSmmMpProtocolGuid not found!\n"));
     return Status;
@@ -569,7 +733,7 @@ MmMpTestSwSmiCallback (
   IN  OUT UINTN                         *CommBufferSize
   )
 {
-  CpuDeadLoop ();
+  //CpuDeadLoop ();
   SmmMpVerification ();
 
   return EFI_SUCCESS;
