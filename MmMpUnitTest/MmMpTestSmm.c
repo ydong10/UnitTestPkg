@@ -211,6 +211,28 @@ DebugMsg (
   ReleaseSpinLock (&mConsoleLock);
 }
 
+/**
+  The function prototype for invoking a function on an Application Processor.
+
+  This definition is used by the UEFI MP Serices Protocol, and the
+  PI SMM System Table.
+
+  @param[in,out] Buffer  The pointer to private data buffer.
+**/
+
+VOID
+StartupProcedure (
+  IN OUT VOID  *Buffer
+  )
+{
+  PROCEDURE_ARGUMENTS            *Argument;
+  
+  Argument = (PROCEDURE_ARGUMENTS *)Buffer;
+
+  DEBUG ((DEBUG_INFO, "    StartupProcedure Trigged, MagicNum = 0x%x, Processor Index = 0x%x!\n", Argument->MagicNumber, Argument->ProcessorIndex));
+}
+
+
 EFI_STATUS
 SingleApSyncProcedure (
   IN VOID  *ProcedureArgument
@@ -666,6 +688,7 @@ SmmMpVerification (
   EFI_SMM_CPU_SERVICE_PROTOCOL      *SmmCpu;
   UINTN                             BspIndex;
   UINTN                             SelectedApIndex;
+  PROCEDURE_ARGUMENTS               *Argument;
 
   Status = gSmst->SmmLocateProtocol (&gEfiMmMpProtocolGuid, NULL, (VOID **) &SmmMp);
   if (EFI_ERROR (Status)) {
@@ -684,6 +707,17 @@ SmmMpVerification (
   Status = SmmCpu->WhoAmI (SmmCpu, &BspIndex);
   ASSERT_EFI_ERROR (Status);
   DEBUG ((DEBUG_INFO, "Bsp Index = %x!\n", BspIndex));
+
+  //
+  // 0. Test SmmMp->SetStartupProcedure API.
+  //
+  Argument = AllocatePool (sizeof (PROCEDURE_ARGUMENTS));
+  ASSERT (Argument != NULL);
+  Argument->ProcessorIndex = (UINT32) BspIndex;
+  Argument->MagicNumber    = 0x1234;
+  Status = SmmMp->SetStartupProcedure (SmmMp, StartupProcedure, Argument);
+  ASSERT_EFI_ERROR (Status);
+  DEBUG ((DEBUG_INFO, "Test for SmmMpSetStartupProcedure Done!\n"));
 
   //
   // 1. Test SmmMp->GetNumberOfProcessors API.
