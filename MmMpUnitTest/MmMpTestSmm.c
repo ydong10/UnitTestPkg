@@ -229,7 +229,7 @@ StartupProcedure (
   
   Argument = (PROCEDURE_ARGUMENTS *)Buffer;
 
-  DEBUG ((DEBUG_INFO, "    StartupProcedure Trigged, MagicNum = 0x%x, Processor Index = 0x%x!\n", Argument->MagicNumber, Argument->ProcessorIndex));
+  //DEBUG ((DEBUG_INFO, "    StartupProcedure Trigged, MagicNum = 0x%x, Processor Index = 0x%x!\n", Argument->MagicNumber, Argument->ProcessorIndex));
 }
 
 
