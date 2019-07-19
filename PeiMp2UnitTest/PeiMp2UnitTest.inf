@@ -1,0 +1,52 @@
+## @file
+#  Pcat SingleSegmentPciCfg2Pei Pei Module.
+#
+#  It installs SingleSegmentPciConfiguration2 PPI to provide read, write and modify access to Pci configuration space in PEI phase.
+#  To follow PI specification, these services also support access to the unaligned Pci address.
+#
+#  Copyright (c) 2006 - 2018, Intel Corporation. All rights reserved.<BR>
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = PeiMp2UnitTestPei
+  MODULE_UNI_FILE                = PeiMp2UnitTestPei.uni
+  FILE_GUID                      = 0218bfac-e6bd-407e-9b66-9fdb6b87b619
+  MODULE_TYPE                    = PEIM
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = PeiMp2UnitTest
+
+#
+# The following information is for reference only and not required by the build tools.
+#
+#  VALID_ARCHITECTURES           = IA32 X64 EBC (EBC is for build only)
+#
+
+[Sources]
+  PeiMp2UnitTest.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  UefiCpuPkg/UefiCpuPkg.dec
+
+[LibraryClasses]
+  PeimEntryPoint
+  PciLib
+  BaseLib
+  DebugLib
+  PeiServicesLib
+  TimerLib
+  SynchronizationLib
+
+[Ppis]
+  gEdkiiPeiMpServices2PpiGuid
+
+[Depex]
+  gEdkiiPeiMpServices2PpiGuid
+
+[UserExtensions.TianoCore."ExtraFiles"]
+  PeiMp2UnitTestExtra.uni
