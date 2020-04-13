@@ -46,8 +46,6 @@ ENTRY_POINT              = MmMpTestSmmEntryPoint
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   DevicePathLib
-  PchPlatformLib
-  MmPciBaseLib
   SynchronizationLib
   TimerLib
 
