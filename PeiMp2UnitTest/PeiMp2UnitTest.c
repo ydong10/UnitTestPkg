@@ -9,11 +9,13 @@
 **/
 
 #include <PiPei.h>
-#include <Ppi/EdkiiMpServices2.h>
+#include <Ppi/MpServices2.h>
 #include <Library/PeiServicesLib.h>
 #include <Library/DebugLib.h>
 #include <Library/TimerLib.h>
 #include <Library/SynchronizationLib.h>
+
+EDKII_PEI_MP_SERVICES2_PPI           *mCpuMp2Ppi;
 
 typedef struct {
   UINT32    MagicNum;
@@ -177,13 +179,23 @@ Procedure (
   )
 {
   PEI_MP2_PROCEDURE_PARAM            *Argument;
+  UINTN                              ApIndex;
+
+  ApIndex = 0;
+
+  EFI_STATUS                         Status;
+
+  if (mCpuMp2Ppi != NULL) {
+    Status = mCpuMp2Ppi->WhoAmI (mCpuMp2Ppi, &ApIndex);
+    ASSERT_EFI_ERROR (Status);
+  }
 
   Argument = (PEI_MP2_PROCEDURE_PARAM *)ProcedureArgument;
   while (!AcquireSpinLockOrFail (&mConsoleLock)) {
     CpuPause ();
   }
 
-  DEBUG((DEBUG_INFO, "    Procedure function done, SleepTime = 0x%x.\n", Argument->SleepTime));
+  DEBUG((DEBUG_INFO, "Ap 0x%x Procedure function done, SleepTime = 0x%x.\n", ApIndex, Argument->SleepTime));
   ReleaseSpinLock (&mConsoleLock);
 
   if (Argument->SleepTime != 0) {
@@ -208,7 +220,7 @@ PeiMp2UnitTest (
   )
 {
   EFI_STATUS                           Status;
-  EDKII_PEI_MP_SERVICES2_PPI           *CpuMp2Ppi;
+
   PEI_MP2_PROCEDURE_PARAM              ProcParam;
 
   InitializeSpinLock((SPIN_LOCK*) &mConsoleLock);
@@ -220,7 +232,7 @@ PeiMp2UnitTest (
              &gEdkiiPeiMpServices2PpiGuid,
              0,
              NULL,
-             (VOID **)&CpuMp2Ppi
+             (VOID **)&mCpuMp2Ppi
              );
   ASSERT_EFI_ERROR (Status);
 
@@ -230,30 +242,36 @@ PeiMp2UnitTest (
 
   ProcParam.SleepTime = 0;
   DEBUG((DEBUG_INFO, "1.Test StartupAllCPUs begin, SleepTime = 0x%x\n", ProcParam.SleepTime));
-  Status = CpuMp2Ppi->StartupAllCPUs (
-                 CpuMp2Ppi,
+  Status = mCpuMp2Ppi->StartupAllCPUs (
+                 mCpuMp2Ppi,
                  Procedure,
                  0,
                  &ProcParam
                  );
   if (EFI_ERROR (Status)) {
-    DEBUG((DEBUG_INFO, "Test StartupAllCPUs End ==== Fail !\n"));
+    DEBUG((DEBUG_INFO, "1. Test StartupAllCPUs End ==== Fail !\n"));
   } else {
-    DEBUG((DEBUG_INFO, "Test StartupAllCPUs End ==== Pass !\n"));
+    DEBUG((DEBUG_INFO, "1. Test StartupAllCPUs End ==== Pass !\n"));
   }
 
   ProcParam.SleepTime = 0x30;
   DEBUG((DEBUG_INFO, "2.Test StartupAllCPUs with SleepTime = 0x%x\n", ProcParam.SleepTime));
-  Status = CpuMp2Ppi->StartupAllCPUs (
-                 CpuMp2Ppi,
+  Status = mCpuMp2Ppi->StartupAllCPUs (
+                 mCpuMp2Ppi,
                  Procedure,
                  0x20,
                  &ProcParam
                  );
   if (EFI_ERROR (Status)) {
-    DEBUG((DEBUG_INFO, "Test StartupAllCPUs End ==== Fail !\n"));
+    //
+    // StartAllCPUs will let APs to run the procedure first, then BSP
+    // itself will run the procedure, at last BSP will check the APs
+    // result. So the timeout value not works here because Bsp run
+    // procedure also needs time.
+    //
+    DEBUG((DEBUG_INFO, "2. Test StartupAllCPUs End ==== Fail !\n"));
   } else {
-    DEBUG((DEBUG_INFO, "Test StartupAllCPUs End ==== Pass !\n"));
+    DEBUG((DEBUG_INFO, "2. Test StartupAllCPUs End ==== Pass !\n"));
   }
 
   DEBUG((DEBUG_INFO, "Edkii Pei Mp Services2 Ppi test End!\n"));
