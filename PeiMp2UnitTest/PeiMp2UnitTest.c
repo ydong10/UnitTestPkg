@@ -172,7 +172,6 @@ Sleep (
   }
 }
 
-
 VOID
 Procedure (
   IN VOID  *ProcedureArgument
@@ -203,42 +202,99 @@ Procedure (
   }
 }
 
-/**
-  Module's entry function.
-  This routine will install EFI_PEI_PCI_CFG2_PPI.
+VOID
+TestAPIEnableDisableAP (
+  VOID
+  )
+{
+  UINTN                       NumberOfProcessors;
+  UINTN                       NumberOfEnabledProcessors;
+  EFI_STATUS                  Status;
+  PEI_MP2_PROCEDURE_PARAM     ProcParam;
 
-  @param  FileHandle  Handle of the file being invoked.
-  @param  PeiServices Describes the list of possible PEI Services.
+  DEBUG((DEBUG_INFO, "1.Test EnableDisableAP begin!\n"));
+  Status = mCpuMp2Ppi->GetNumberOfProcessors (
+                         mCpuMp2Ppi,
+                         &NumberOfProcessors,
+                         &NumberOfEnabledProcessors);
+  if (EFI_ERROR (Status)) {
+    ///
+    /// If unable to retrieve the Number of Processors - assert.
+    ///
+    DEBUG((DEBUG_INFO, "GetNumberOfProcessors return failure!\n"));
+    return;
+  }
+  DEBUG((DEBUG_INFO, "Before disable one AP, NumOfProc = 0x%x, NumOfEnableProc = 0x%x!\n", NumberOfProcessors, NumberOfEnabledProcessors));
 
-  @return Whether success to install service.
-**/
-EFI_STATUS
-EFIAPI
-PeiMp2UnitTest (
-  IN       EFI_PEI_FILE_HANDLE  FileHandle,
-  IN CONST EFI_PEI_SERVICES     **PeiServices
+  Status = mCpuMp2Ppi->EnableDisableAP (
+                        mCpuMp2Ppi,
+                        NumberOfProcessors - 1,
+                        FALSE,
+                        NULL
+                        );
+  if (EFI_ERROR (Status)) {
+    ///
+    /// If unable to retrieve the Number of Processors - assert.
+    ///
+    DEBUG((DEBUG_INFO, "EnableDisableAP return failure!\n"));
+    return;
+  }
+
+  Status = mCpuMp2Ppi->GetNumberOfProcessors (
+                         mCpuMp2Ppi,
+                         &NumberOfProcessors,
+                         &NumberOfEnabledProcessors);
+  ASSERT_EFI_ERROR (Status);
+  DEBUG((DEBUG_INFO, "After disable one AP, NumOfProc = 0x%x, NumOfEnableProc = 0x%x!\n", NumberOfProcessors, NumberOfEnabledProcessors));
+
+  Status = mCpuMp2Ppi->EnableDisableAP (
+                        mCpuMp2Ppi,
+                        NumberOfProcessors - 1,
+                        TRUE,
+                        NULL
+                        );
+  ASSERT_EFI_ERROR (Status);
+
+  Status = mCpuMp2Ppi->GetNumberOfProcessors (
+                         mCpuMp2Ppi,
+                         &NumberOfProcessors,
+                         &NumberOfEnabledProcessors);
+  ASSERT_EFI_ERROR (Status);
+
+  DEBUG((DEBUG_INFO, "After enable one AP, NumOfProc = 0x%x, NumOfEnableProc = 0x%x!\n", NumberOfProcessors, NumberOfEnabledProcessors));
+
+  //
+  // Add below code here to test an regression issue fix below bugz:
+  // https://bugzilla.tianocore.org/show_bug.cgi?id=2474
+  //
+  ProcParam.SleepTime = 0x30;
+  DEBUG((DEBUG_INFO, "Trig StartupAllCPUs with SleepTime = 0x%x\n", ProcParam.SleepTime));
+  Status = mCpuMp2Ppi->StartupAllCPUs (
+                 mCpuMp2Ppi,
+                 Procedure,
+                 0x20,
+                 &ProcParam
+                 );
+  if (EFI_ERROR (Status)) {
+    //
+    // StartAllCPUs will let APs to run the procedure first, then BSP
+    // itself will run the procedure, at last BSP will check the APs
+    // result. So the timeout value not works here because Bsp run
+    // procedure also needs time.
+    //
+    DEBUG((DEBUG_INFO, "Trig StartupAllCPUs returns Fail !\n"));
+  } else {
+    DEBUG((DEBUG_INFO, "Trig StartupAllCPUs returns Pass !\n"));
+  }
+}
+
+VOID
+TestAPIStartAllCPU (
+  VOID
   )
 {
   EFI_STATUS                           Status;
-
   PEI_MP2_PROCEDURE_PARAM              ProcParam;
-
-  InitializeSpinLock((SPIN_LOCK*) &mConsoleLock);
-
-  //
-  // Get MP Services2 Ppi
-  //
-  Status = PeiServicesLocatePpi (
-             &gEdkiiPeiMpServices2PpiGuid,
-             0,
-             NULL,
-             (VOID **)&mCpuMp2Ppi
-             );
-  ASSERT_EFI_ERROR (Status);
-
-  DEBUG((DEBUG_INFO, "=========================================\n"));
-  DEBUG((DEBUG_INFO, "=========================================\n"));
-  DEBUG((DEBUG_INFO, "Begin do Edkii Pei Mp Services2 Ppi test!\n"));
 
   ProcParam.SleepTime = 0;
   DEBUG((DEBUG_INFO, "1.Test StartupAllCPUs begin, SleepTime = 0x%x\n", ProcParam.SleepTime));
@@ -273,9 +329,47 @@ PeiMp2UnitTest (
   } else {
     DEBUG((DEBUG_INFO, "2. Test StartupAllCPUs End ==== Pass !\n"));
   }
+}
+
+/**
+  Module's entry function.
+  This routine will install EFI_PEI_PCI_CFG2_PPI.
+
+  @param  FileHandle  Handle of the file being invoked.
+  @param  PeiServices Describes the list of possible PEI Services.
+
+  @return Whether success to install service.
+**/
+EFI_STATUS
+EFIAPI
+PeiMp2UnitTest (
+  IN       EFI_PEI_FILE_HANDLE  FileHandle,
+  IN CONST EFI_PEI_SERVICES     **PeiServices
+  )
+{
+  EFI_STATUS                           Status;
+
+  InitializeSpinLock((SPIN_LOCK*) &mConsoleLock);
+
+  //
+  // Get MP Services2 Ppi
+  //
+  Status = PeiServicesLocatePpi (
+             &gEdkiiPeiMpServices2PpiGuid,
+             0,
+             NULL,
+             (VOID **)&mCpuMp2Ppi
+             );
+  ASSERT_EFI_ERROR (Status);
+
+  DEBUG((DEBUG_INFO, "=========================================\n"));
+  DEBUG((DEBUG_INFO, "Begin do Edkii Pei Mp Services2 Ppi test!\n"));
+
+  TestAPIStartAllCPU ();
+
+  TestAPIEnableDisableAP ();
 
   DEBUG((DEBUG_INFO, "Edkii Pei Mp Services2 Ppi test End!\n"));
-  DEBUG((DEBUG_INFO, "=========================================\n"));
   DEBUG((DEBUG_INFO, "=========================================\n"));
 
   return EFI_SUCCESS;
